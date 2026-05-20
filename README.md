@@ -56,7 +56,7 @@ Simply spin up the container using Docker Compose:
 ```Bash
 docker compose up -d
 ```
-Open your browser and navigate to http://YOUR_SERVER_IP:8018 to access the AirSane web interface and start scanning straight to Paperless-ngx!
+Open your browser and navigate to http://YOUR_SERVER_IP:8095 to access the AirSane web interface and start scanning straight to Paperless-ngx!
 
 Contributing & License
 Feel free to open issues or submit pull requests if you want to add support for other brscan driver versions.
