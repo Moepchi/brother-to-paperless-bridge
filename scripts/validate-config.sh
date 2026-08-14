@@ -45,6 +45,11 @@ case "${SCAN_DUPLEX:-false}" in
   *) echo "ERROR: SCAN_DUPLEX must be true or false." >&2; exit 1 ;;
 esac
 
+case "${AIRSANE_DEBUG:-false}" in
+  true|false) ;;
+  *) echo "ERROR: AIRSANE_DEBUG must be true or false." >&2; exit 1 ;;
+esac
+
 if [[ ! "${QUEUE_RETRY_INTERVAL:-60}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: QUEUE_RETRY_INTERVAL must be a positive integer." >&2
   exit 1

@@ -47,4 +47,7 @@ brscan-skey -r
 "${SCRIPT_DIR}/queue-worker.sh" &
 
 echo "SYSTEM READY: AirSane is listening on port ${AIRSANE_PORT}"
-exec /usr/local/bin/airsaned --listen-port="${AIRSANE_PORT}" --access-log=-
+exec /usr/local/bin/airsaned \
+  --listen-port="${AIRSANE_PORT}" \
+  --access-log=- \
+  --debug="${AIRSANE_DEBUG:-false}"

@@ -104,6 +104,11 @@ Run the dependency-free regression checks with:
 bash tests/run.sh
 ```
 
+The build uses a separate AirSane build stage, while the final image contains only runtime
+packages. AirSane is checked out at a pinned Git commit and the Brother driver download is
+SHA-256 verified. Override the corresponding Docker build arguments only when intentionally
+upgrading either component.
+
 Contributing & License
 Feel free to open issues or submit pull requests if you want to add support for other brscan driver versions.
 
