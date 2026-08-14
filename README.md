@@ -1,125 +1,279 @@
-# Brother to Paperless-ngx Bridge 🖨️🐳📄
+<div align="center">
 
-This Docker container bridges the gap between legacy Brother MFC scanners (using `brscan4`) and **Paperless-ngx**. It utilizes **AirSane** to provide a modern Web-UI and Apple AirPrint scanning capabilities while managing the automated push to your Paperless consumption directory.
+# Brother → Paperless-ngx Bridge
+
+**Use the hardware scan button on a legacy Brother network scanner to deliver documents safely to Paperless-ngx.**
+
+[![Release](https://img.shields.io/github/v/release/Moepchi/brother-to-paperless-bridge?display_name=tag&sort=semver)](https://github.com/Moepchi/brother-to-paperless-bridge/releases/latest)
+[![Tests](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/tests.yml/badge.svg)](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20amd64-2563eb.svg)](#compatibility)
+
+[Quick start](#quick-start) · [Configuration](#configuration) · [Operations](#operations) · [Troubleshooting](#troubleshooting)
+
+</div>
 
 ---
 
-## Features
-* **Legacy Support:** Built specifically for older Brother scanners (like MFC-7360N and others using `brscan4`).
-* **AirSane Integration:** Exposes your scanner via a lightweight web interface and SANE network protocol.
-* **Automated Workflow:** Integrates `brscan-skey` to process scans via custom scripts.
-* **Safe Delivery:** Stores completed scans in a persistent queue until Paperless accepts them.
-* **Secure Setup:** Environment-variable driven configuration (no hardcoded credentials).
+## Why this bridge exists
 
----
+Older Brother MFC devices can expose their scanner through the proprietary `brscan4`
+driver and send hardware-button events through `brscan-skey`. This container connects that
+legacy workflow to the Paperless-ngx API and also exposes the scanner through AirSane.
+
+| Capability | What it provides |
+| --- | --- |
+| 🖨️ Hardware-button scanning | Supports Brother **Scan to File** and **Scan to Image** actions |
+| 📥 Safe delivery | A completed scan enters a persistent queue before any upload is attempted |
+| 🔁 Automatic recovery | Failed uploads are retried after startup and periodically in the background |
+| 🧯 Duplicate protection | The scan handler and retry worker cannot upload at the same time |
+| 🩺 Observable health | Docker checks AirSane, the Brother button service, and the queue worker |
+| 🔒 Safer runtime | Network-scanner deployments run without privileged container access |
+| 📱 AirSane | Makes the scanner available to compatible eSCL/AirScan clients and a small web UI |
+
+```text
+Brother scan button → brscan-skey → multi-page TIFF → persistent queue → Paperless-ngx API
+                                            └──── retry until accepted ────┘
+```
+
+## Compatibility
+
+| Component | Status |
+| --- | --- |
+| Brother MFC-7360N over Ethernet | ✅ Tested |
+| Other network scanners supported by `brscan4` | 🧪 Expected to work, hardware reports welcome |
+| Linux `amd64` Docker host | ✅ Supported |
+| USB-connected scanners | ⚠️ Not tested; map the specific USB device instead of enabling privileged mode |
+| Paperless-ngx | ✅ Uses the document upload API |
+
+The bundled defaults and package checksums currently target `brscan4 0.4.11-1` and
+`brscan-skey 0.3.5-0` for `amd64`.
 
 ## Prerequisites
-Before deploying, make sure you have:
-1. The static IP address of your Brother scanner.
-2. A running Paperless-ngx instance.
-3. The specific `.deb` drivers for your Brother scanner (if required during your own custom image builds).
 
----
+- Docker Engine with Docker Compose v2
+- A Brother network scanner with a static IP address
+- A reachable Paperless-ngx instance and API token
+- The Brother **Scan Key Tool for Linux** package
+  `brscan-skey-0.3.5-0.amd64.deb`
 
-## Quick Start
+Brother's Scan Key Tool is proprietary and is therefore not redistributed in this
+repository. Download the Linux package for your model from
+[Brother Support](https://support.brother.com/) and review Brother's
+[Scan Key Tool instructions](https://support.brother.com/g/b/faqend.aspx?c=at&faqid=faq00100714_000&lang=de&prod=mfc7360n_all).
 
-### 1. Configuration (`.env`)
-Create an `.env` file based on the provided `example.env`:
+## Quick start
 
-```env
-    BRSCAN_IP=192.168.1.X
-    SCANNER_NAME=Brother_Scanner
-    SCANNER_MODEL=MFC-7360N
-    SCAN_PC_NAME=ScanToPaperless
-    PAPERLESS_URL=http[s]://your-paperless-instance:Port
-    PAPERLESS_TOKEN=your_secret_api_token
-    AIRSANE_PORT=8095
-    SCAN_DEVICE="brother4:net1;dev0"
-    SCAN_MODE=True Gray
-    SCAN_RESOLUTION=100
-    SCAN_SOURCE=FB
-    SCAN_SIZE=A4
-    SCAN_DUPLEX=false
-    QUEUE_RETRY_INTERVAL=60
+### 1. Get the project
+
+```bash
+git clone https://github.com/Moepchi/brother-to-paperless-bridge.git
+cd brother-to-paperless-bridge
+cp example.env .env
 ```
 
-### 2. Docker Compose (compose.yaml)
-Build the image locally so the Brother driver package can be supplied according to its license:
-```
-YAML
-services:
-  brother-bridge:
-        build: .
-        image: brother-to-paperless-bridge:local
-    container_name: brother-bridge
-    restart: unless-stopped
-        network_mode: host
-        env_file: [.env]
-        volumes:
-          - ./brscan-skey-0.3.5-0.amd64.deb:/tmp/skey.deb:ro
-          - scan-queue:/var/lib/brother-bridge/queue
+Place the Brother package beside `compose.yaml`:
 
-    volumes:
-      scan-queue:
+```text
+brother-to-paperless-bridge/
+├── brscan-skey-0.3.5-0.amd64.deb
+├── compose.yaml
+├── Dockerfile
+└── .env
 ```
 
-### 3. Start the Engine
-Simply spin up the container using Docker Compose:
+### 2. Configure the bridge
 
-```Bash
-docker compose up -d
+Edit `.env` and set at least these values:
+
+```dotenv
+BRSCAN_IP=192.168.1.50
+SCANNER_MODEL=MFC-7360N
+SCAN_PC_NAME=ScanToPaperless
+
+PAPERLESS_URL=http://192.168.1.100:8000
+PAPERLESS_TOKEN=replace_with_your_api_token
+
+SCAN_DEVICE="brother4:net1;dev0"
 ```
-Open `http://YOUR_SERVER_IP:8095` for AirSane scans to a browser or compatible client.
-The scanner's `Scan to Image` and `Scan to File` hardware-button actions use Brother's
-`skey-scanimage` helper and send the resulting multi-page TIFF to Paperless-ngx. Supported
-sources are `FB` (flatbed), `ADF_L` (left-aligned feeder), and `ADF_C` (centered feeder).
 
-By default, the container enables only the `brother4` SANE backend. This keeps device
-discovery fast and prevents the bundled AirScan backend from rediscovering AirSane itself.
-Set `SANE_ONLY_BROTHER4=false` only when the same container intentionally needs other
-SANE backends.
+Keep the quotes around `SCAN_DEVICE`: the semicolon has special meaning in shell syntax.
+The default `BRSCAN_SKEY_SHA256` already matches
+`brscan-skey-0.3.5-0.amd64.deb`. When intentionally using another package, calculate its
+SHA-256 checksum and update the variable before starting the container.
 
-The default network-scanner setup does not run the container in privileged mode. If you
-adapt the stack for a scanner connected by USB, map only that USB device explicitly instead
-of granting unrestricted host-device access.
+Protect the file because it contains your Paperless token:
 
-If Paperless is unavailable or rejects an upload, the completed document remains in the
-persistent `scan-queue` volume. Queued documents are retried when the container starts,
-and periodically in the background. An upload failure therefore never deletes the scan.
-The retry interval defaults to 60 seconds and can be changed with
-`QUEUE_RETRY_INTERVAL`. Uploads are serialized with a shared lock so the scan handler
-and background retry worker cannot submit the same document at the same time.
+```bash
+chmod 600 .env
+```
 
-Docker also checks the Brother button service, queue worker, and AirSane endpoint every
-30 seconds. `docker compose ps` reports the container as `healthy` when all three are
-available.
+### 3. Handle the optional private CA
 
-### Custom certificates
+The included Compose file mounts `rootCA.crt`. Choose one option before starting:
 
-The included Compose file expects `rootCA.crt` for installations that use a private CA.
-If your Paperless instance uses a publicly trusted certificate or plain HTTP on a trusted
-local network, remove the `rootCA.crt` volume line from `compose.yaml`.
+- **Private certificate authority:** place its PEM certificate at `./rootCA.crt`.
+- **Publicly trusted HTTPS or trusted local HTTP:** remove the `rootCA.crt` volume line
+  from `compose.yaml`.
 
-### Tests
+### 4. Build and start
 
-Run the dependency-free regression checks with:
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+After the start period, Compose should report the container as `healthy`. AirSane is then
+available at `http://DOCKER_SERVER_IP:8095`.
+
+### 5. Make the first scan
+
+On the scanner, select **Scan → File → ScanToPaperless** (wording varies by model). The
+document is scanned as a multi-page TIFF, placed safely in the queue, and submitted to
+Paperless-ngx.
+
+## Configuration
+
+The complete, commented configuration lives in [`example.env`](example.env).
+
+### Scanner
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BRSCAN_IP` | required | Static IP address of the Brother scanner |
+| `SCANNER_NAME` | `Brother_Scanner` | Internal SANE registration name |
+| `SCANNER_MODEL` | `MFC-7360N` | Exact model passed to `brsaneconfig4` |
+| `SCAN_PC_NAME` | required | Target shown on the scanner; maximum 15 characters |
+| `SCAN_DEVICE` | auto-detect | Direct SANE device, commonly `brother4:net1;dev0` |
+| `SCAN_RESOLUTION` | `100` | Resolution used by Brother's hardware-button helper |
+| `SCAN_SOURCE` | `FB` | `FB`, `ADF_L`, or `ADF_C` |
+| `SCAN_SIZE` | `A4` | Page size passed to the Brother helper |
+| `SCAN_DUPLEX` | `false` | Enables duplex where supported by model and source |
+
+`SCAN_MODE` remains available for compatibility but is not currently applied by Brother's
+`skey-scanimage` hardware-button workflow.
+
+### Paperless and reliability
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PAPERLESS_URL` | required | Base URL of Paperless-ngx, without a trailing API path |
+| `PAPERLESS_TOKEN` | required | Paperless API token |
+| `UPLOAD_RETRIES` | `3` | Immediate retries for one upload attempt |
+| `UPLOAD_LOCK_TIMEOUT` | `330` | Maximum wait for another active uploader |
+| `QUEUE_RETRY_INTERVAL` | `60` | Seconds between background queue retries |
+
+### AirSane and diagnostics
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AIRSANE_PORT` | `8095` | AirSane HTTP/eSCL port on the Docker host |
+| `AIRSANE_DEBUG` | `false` | Enables verbose AirSane diagnostics |
+| `SANE_ONLY_BROTHER4` | `true` | Avoids slow discovery and AirSane discovering itself |
+
+## How safe delivery works
+
+1. The Brother helper completes the scan in a temporary directory.
+2. The finished TIFF is moved atomically into the persistent `scan-queue` volume.
+3. The bridge requests a Paperless upload while holding a shared upload lock.
+4. The file is deleted only after Paperless accepts the request.
+5. A failed request leaves the file untouched for the background retry worker.
+
+The queue survives container recreation and server restarts. Test scans may be TIFF files;
+Paperless performs its normal document processing after accepting them.
+
+## Operations
+
+### Status and logs
+
+```bash
+docker compose ps
+docker compose logs --tail=100 brother-bridge
+docker compose logs -f brother-bridge
+```
+
+### Inspect queued documents
+
+```bash
+docker exec brother-bridge \
+  find /var/lib/brother-bridge/queue -maxdepth 1 -type f -name '*.tiff' -print
+```
+
+Do not delete queued files unless you have confirmed that the corresponding documents are
+already present in Paperless.
+
+### Update
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+docker compose ps
+```
+
+The named queue volume is retained during ordinary rebuilds and container recreation. Do
+not run `docker compose down -v` unless you intentionally want to remove queued documents.
+
+## Troubleshooting
+
+### The scanner says “Check connection” / “Verbindung prüfen”
+
+- Confirm that `BRSCAN_IP` points to the scanner, not the Docker server.
+- Confirm that the scanner can reach the Docker server on the local network.
+- Keep `network_mode: host`; Brother's button service relies on network discovery/events.
+- Check that `SCAN_PC_NAME` is at most 15 characters.
+- Inspect logs with `docker compose logs --tail=100 brother-bridge`.
+
+### The container is unhealthy
+
+```bash
+docker inspect --format '{{json .State.Health}}' brother-bridge
+docker exec brother-bridge /usr/local/lib/brother-bridge/healthcheck.sh
+```
+
+The healthcheck requires AirSane, `brscan-skey`, and the queue worker to be running.
+
+### The scan is not visible in Paperless
+
+Check the queue and logs first. A queued TIFF means scanning succeeded but Paperless did not
+accept the upload yet. Verify `PAPERLESS_URL`, the API token, TLS trust, and connectivity from
+the Docker server. The worker retries automatically; restarting is normally unnecessary.
+
+### The Brother package checksum fails
+
+Do not bypass this check for an unexplained mismatch. Confirm that the package came from
+Brother, calculate its checksum with `sha256sum`, and update `BRSCAN_SKEY_SHA256` only when
+the different package is intentional.
+
+### AirSane is slow or discovers itself
+
+Leave `SANE_ONLY_BROTHER4=true`. Enable other SANE backends only if this same container must
+serve additional non-Brother scanners.
+
+## Security notes
+
+- The network-scanner setup does not require `privileged: true`.
+- The Paperless token stays in `.env`; never commit that file.
+- AirSane is exposed through host networking. Restrict access with your host firewall when
+  the Docker server is reachable from untrusted networks.
+- AirSane, the Debian base image, and Brother packages are pinned or checksum-verified.
+
+## Development
+
+Run the dependency-free regression suite with:
 
 ```bash
 bash tests/run.sh
 ```
 
-The build uses a separate AirSane build stage, while the final image contains only runtime
-packages. AirSane is checked out at a pinned Git commit and the Brother driver download is
-SHA-256 verified. Override the corresponding Docker build arguments only when intentionally
-upgrading either component.
+The same checks run automatically in GitHub Actions for pushes and pull requests.
 
-The separately mounted `brscan-skey` package is also verified before installation. The
-included checksum matches `brscan-skey-0.3.5-0.amd64.deb`; set `BRSCAN_SKEY_SHA256` to the
-verified checksum when intentionally supplying a different package.
+## License
 
-## Contributing and license
+Released under the [MIT License](LICENSE). Contributions and hardware compatibility reports
+are welcome.
 
-Feel free to open issues or submit pull requests if you want to add support for other brscan
-driver versions. This project is available under the [MIT License](LICENSE).
+<div align="center">
 
-Maintained with ☕ by Moepchi.
+Maintained with ☕ by **Moepchi**
+
+</div>
