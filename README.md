@@ -79,6 +79,10 @@ discovery fast and prevents the bundled AirScan backend from rediscovering AirSa
 Set `SANE_ONLY_BROTHER4=false` only when the same container intentionally needs other
 SANE backends.
 
+The default network-scanner setup does not run the container in privileged mode. If you
+adapt the stack for a scanner connected by USB, map only that USB device explicitly instead
+of granting unrestricted host-device access.
+
 If Paperless is unavailable or rejects an upload, the completed document remains in the
 persistent `scan-queue` volume. Queued documents are retried when the container starts,
 and periodically in the background. An upload failure therefore never deletes the scan.
