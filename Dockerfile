@@ -24,7 +24,7 @@ ARG BRSCAN4_SHA256=027b73648722ac8c8eb1a9c419d284a6562cc763feac9740a2b75a683b092
 RUN apt-get update \
     && apt-get install -y \
       avahi-daemon ca-certificates curl dbus iputils-ping libsane \
-      libtiff-tools procps sane-utils util-linux wget \
+      jq libtiff-tools procps sane-utils util-linux wget \
     && curl --fail --location --silent --show-error \
       "https://slackware.uk/sbosrcarch/by-name/system/brother-brscan4/brscan4-${BRSCAN4_VERSION}.amd64.deb" \
       --output /tmp/brscan4.deb \

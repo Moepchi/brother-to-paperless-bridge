@@ -82,7 +82,7 @@ retry_removes_successful_upload() {
   local case_dir="${TMP_ROOT}/success"
   mkdir -p "${case_dir}/bin" "${case_dir}/queue"
   printf 'scan' > "${case_dir}/queue/document.tiff"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "${case_dir}/bin/curl"
+  write_successful_curl_mock "${case_dir}/bin/curl"
   chmod +x "${case_dir}/bin/curl"
 
   PATH="${case_dir}/bin:${PATH}" \
@@ -91,6 +91,26 @@ retry_removes_successful_upload() {
     SCAN_QUEUE_DIR="${case_dir}/queue" \
       "${ROOT}/scripts/retry-queue.sh" >/dev/null \
     && [[ ! -e "${case_dir}/queue/document.tiff" ]]
+}
+
+write_successful_curl_mock() {
+  local target=$1
+  cat > "${target}" <<'EOF'
+#!/usr/bin/env bash
+output=''
+for (( index=1; index <= $#; index++ )); do
+  if [[ "${!index}" == --output ]]; then
+    next=$((index + 1))
+    output=${!next}
+  fi
+done
+if [[ -n "${output}" ]]; then
+  printf '"task-success"\n' > "${output}"
+else
+  printf '[{"task_id":"task-success","status":"SUCCESS","related_document":42}]\n'
+fi
+EOF
+  chmod +x "${target}"
 }
 
 uploads_are_serialized() {
@@ -105,6 +125,18 @@ if ! mkdir "${UPLOAD_TEST_GUARD}" 2>/dev/null; then
 fi
 sleep 0.2
 rmdir "${UPLOAD_TEST_GUARD}" 2>/dev/null || true
+output=''
+for (( index=1; index <= $#; index++ )); do
+  if [[ "${!index}" == --output ]]; then
+    next=$((index + 1))
+    output=${!next}
+  fi
+done
+if [[ -n "${output}" ]]; then
+  printf '"task-success"\n' > "${output}"
+else
+  printf '[{"status":"SUCCESS"}]\n'
+fi
 EOF
   chmod +x "${case_dir}/bin/curl"
 
@@ -121,6 +153,60 @@ EOF
 
   wait "${first_pid}" && wait "${second_pid}" \
     && [[ ! -s "${case_dir}/result" ]]
+}
+
+pending_task_is_resumed_without_reupload() {
+  local case_dir="${TMP_ROOT}/pending-task"
+  mkdir -p "${case_dir}/bin" "${case_dir}/queue"
+  printf 'scan' > "${case_dir}/queue/document.tiff"
+  printf 'existing-task\n' > "${case_dir}/queue/document.tiff.task"
+  cat > "${case_dir}/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+if [[ " $* " == *' -F '* ]]; then
+  printf 'unexpected upload\n' >> "${TASK_TEST_RESULT}"
+  exit 1
+fi
+printf '[{"task_id":"existing-task","status":"SUCCESS","related_document":42}]\n'
+EOF
+  chmod +x "${case_dir}/bin/curl"
+
+  PATH="${case_dir}/bin:${PATH}" \
+    PAPERLESS_URL=http://paperless:8000 PAPERLESS_TOKEN=secret \
+    SCAN_QUEUE_DIR="${case_dir}/queue" TASK_TEST_RESULT="${case_dir}/result" \
+      "${ROOT}/scripts/retry-queue.sh" >/dev/null \
+    && [[ ! -e "${case_dir}/queue/document.tiff" ]] \
+    && [[ ! -e "${case_dir}/queue/document.tiff.task" ]] \
+    && [[ ! -s "${case_dir}/result" ]]
+}
+
+pending_task_keeps_document_and_task_id() {
+  local case_dir="${TMP_ROOT}/task-timeout"
+  mkdir -p "${case_dir}/bin" "${case_dir}/queue"
+  printf 'scan' > "${case_dir}/queue/document.tiff"
+  cat > "${case_dir}/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+output=''
+for (( index=1; index <= $#; index++ )); do
+  if [[ "${!index}" == --output ]]; then
+    next=$((index + 1))
+    output=${!next}
+  fi
+done
+if [[ -n "${output}" ]]; then
+  printf '"task-pending"\n' > "${output}"
+else
+  printf '[{"task_id":"task-pending","status":"PENDING"}]\n'
+fi
+EOF
+  chmod +x "${case_dir}/bin/curl"
+
+  ! PATH="${case_dir}/bin:${PATH}" \
+    PAPERLESS_URL=http://paperless:8000 PAPERLESS_TOKEN=secret \
+    SCAN_QUEUE_DIR="${case_dir}/queue" PAPERLESS_TASK_TIMEOUT=1 \
+    PAPERLESS_TASK_POLL_INTERVAL=1 \
+      "${ROOT}/scripts/retry-queue.sh" >/dev/null 2>&1 \
+    && [[ -f "${case_dir}/queue/document.tiff" ]] \
+    && [[ $(<"${case_dir}/queue/document.tiff.task") == task-pending ]]
 }
 
 healthcheck_accepts_running_services() {
@@ -149,7 +235,23 @@ while (( $# > 0 )); do
 done
 printf 'page' > "${output}"
 EOF
-  printf '#!/usr/bin/env bash\nexit %s\n' "${curl_exit}" > "${case_dir}/bin/curl"
+  cat > "${case_dir}/bin/tiff2pdf" <<'EOF'
+#!/usr/bin/env bash
+output=''
+while (( $# > 0 )); do
+  if [[ "$1" == -o ]]; then
+    output=$2
+    break
+  fi
+  shift
+done
+printf 'pdf' > "${output}"
+EOF
+  if [[ "${curl_exit}" == 0 ]]; then
+    write_successful_curl_mock "${case_dir}/bin/curl"
+  else
+    printf '#!/usr/bin/env bash\nexit %s\n' "${curl_exit}" > "${case_dir}/bin/curl"
+  fi
   chmod +x "${case_dir}/bin/"*
 }
 
@@ -166,7 +268,7 @@ scan_keeps_document_after_failed_upload() {
     PAPERLESS_URL=http://paperless:8000 \
     PAPERLESS_TOKEN=secret \
       "${ROOT}/scripts/scan-to-paperless.sh" >/dev/null 2>&1 \
-    && compgen -G "${case_dir}/queue/*.tiff" >/dev/null
+    && compgen -G "${case_dir}/queue/*.pdf" >/dev/null
 }
 
 scan_removes_document_after_successful_upload() {
@@ -182,7 +284,26 @@ scan_removes_document_after_successful_upload() {
     PAPERLESS_URL=http://paperless:8000 \
     PAPERLESS_TOKEN=secret \
       "${ROOT}/scripts/scan-to-paperless.sh" >/dev/null \
-    && ! compgen -G "${case_dir}/queue/*.tiff" >/dev/null
+    && ! compgen -G "${case_dir}/queue/*.pdf" >/dev/null
+}
+
+scan_keeps_tiff_when_pdf_conversion_fails() {
+  local case_dir="${TMP_ROOT}/conversion-failed"
+  prepare_scan_mocks "${case_dir}" 22
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${case_dir}/bin/tiff2pdf"
+  chmod +x "${case_dir}/bin/tiff2pdf"
+
+  ! PATH="${case_dir}/bin:${PATH}" \
+    BRIDGE_SCRIPT_DIR="${ROOT}/scripts" \
+    SCAN_DEVICE=brother4:net1_dev0 \
+    SCAN_QUEUE_DIR="${case_dir}/queue" \
+    SCAN_LOCK_DIR="${case_dir}/lock" \
+    SKEY_SCANIMAGE="${case_dir}/bin/skey-scanimage" \
+    PAPERLESS_URL=http://paperless:8000 \
+    PAPERLESS_TOKEN=secret \
+      "${ROOT}/scripts/scan-to-paperless.sh" >/dev/null 2>&1 \
+    && compgen -G "${case_dir}/queue/*.tiff" >/dev/null \
+    && ! compgen -G "${case_dir}/queue/*.partial" >/dev/null
 }
 
 limits_sane_to_brother_backend() {
@@ -207,9 +328,12 @@ run_test 'rejects invalid Brother package checksum' rejects_invalid_skey_checksu
 run_test 'failed upload remains queued' retry_keeps_failed_upload
 run_test 'successful upload leaves queue empty' retry_removes_successful_upload
 run_test 'concurrent uploads are serialized' uploads_are_serialized
+run_test 'existing Paperless task resumes without another upload' pending_task_is_resumed_without_reupload
+run_test 'pending Paperless task keeps document and task ID' pending_task_keeps_document_and_task_id
 run_test 'healthcheck accepts running services' healthcheck_accepts_running_services
 run_test 'failed upload after scan preserves document' scan_keeps_document_after_failed_upload
 run_test 'successful upload after scan clears document' scan_removes_document_after_successful_upload
+run_test 'failed PDF conversion safely queues the original TIFF' scan_keeps_tiff_when_pdf_conversion_fails
 run_test 'SANE discovery is limited to brother4' limits_sane_to_brother_backend
 
 printf '\n%d passed, %d failed\n' "${pass}" "${fail}"

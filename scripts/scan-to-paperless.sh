@@ -67,9 +67,16 @@ if [[ ! -s "${scan_file}" ]]; then
 fi
 
 unique_id=${work_dir##*-}
-queued_document="${QUEUE_DIR}/scan_${timestamp}_${unique_id}.tiff"
+queued_document="${QUEUE_DIR}/scan_${timestamp}_${unique_id}.pdf"
 queued_partial="${queued_document}.partial"
-mv -- "${scan_file}" "${queued_partial}"
+converter=${TIFF_TO_PDF:-tiff2pdf}
+if ! "${converter}" -o "${queued_partial}" "${scan_file}" || [[ ! -s "${queued_partial}" ]]; then
+  rm -f -- "${queued_partial}"
+  queued_document="${QUEUE_DIR}/scan_${timestamp}_${unique_id}.tiff"
+  queued_partial="${queued_document}.partial"
+  mv -- "${scan_file}" "${queued_partial}"
+  echo "WARNING: PDF conversion failed; preserving the original TIFF in the queue." >&2
+fi
 mv -- "${queued_partial}" "${queued_document}"
 queued_partial=''
 
