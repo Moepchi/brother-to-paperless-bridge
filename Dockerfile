@@ -14,4 +14,13 @@ RUN apt-get update && apt-get install -y \
 
 RUN mkdir -p /opt/brother/scanner/brscan-skey/script/
 
-ENTRYPOINT ["/bin/bash", "-c"]
+COPY scripts/ /usr/local/lib/brother-bridge/
+COPY entrypoint.sh /usr/local/bin/brother-bridge-entrypoint
+
+RUN chmod +x /usr/local/bin/brother-bridge-entrypoint \
+    /usr/local/lib/brother-bridge/*.sh \
+    && mkdir -p /var/lib/brother-bridge/queue
+
+VOLUME ["/var/lib/brother-bridge/queue"]
+
+ENTRYPOINT ["/usr/local/bin/brother-bridge-entrypoint"]

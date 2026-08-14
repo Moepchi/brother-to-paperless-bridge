@@ -1,8 +1,16 @@
 services:
   brother-bridge:
-    image: moepchi/brother-to-paperless-bridge:latest
+    build: .
+    image: "${BRIDGE_IMAGE:-brother-to-paperless-bridge:local}"
     container_name: brother-bridge
+    init: true
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/lib/brother-bridge/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     network_mode: host
     privileged: true
 
@@ -11,76 +19,28 @@ services:
       - ./brscan-skey-0.3.5-0.amd64.deb:/tmp/skey.deb:ro
       # Only required if you use a self-signed SSL certificate for Paperless-ngx
       - ./rootCA.crt:/usr/local/share/ca-certificates/rootCA.crt:ro
+      # Persistent safety queue: failed uploads survive container restarts
+      - scan-queue:/var/lib/brother-bridge/queue
 
     environment:
       # Variables loaded from your .env file
       BRSCAN_IP: "${BRSCAN_IP}"
+      SCANNER_NAME: "${SCANNER_NAME:-Brother_Scanner}"
+      SCANNER_MODEL: "${SCANNER_MODEL:-MFC-7360N}"
       PAPERLESS_URL: "${PAPERLESS_URL}"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
       SCAN_PC_NAME: "${SCAN_PC_NAME}"
       AIRSANE_PORT: "${AIRSANE_PORT}"
-      
-      # The scan script triggered by the scanner's hardware button
-      SCAN_SCRIPT: |-
-        #!/bin/bash
-        # Auto-detecting the scanner device
-        DEVICE=$$(scanimage -L | grep -o "brother4:[^ ']*" | sed "s/['\\\`]//g" | head -n 1)
+      SCAN_DEVICE: "${SCAN_DEVICE:-}"
+      SCAN_MODE: "${SCAN_MODE:-True Gray}"
+      SCAN_RESOLUTION: "${SCAN_RESOLUTION:-100}"
+      SCAN_SOURCE: "${SCAN_SOURCE:-FB}"
+      SCAN_SIZE: "${SCAN_SIZE:-A4}"
+      SCAN_DUPLEX: "${SCAN_DUPLEX:-false}"
+      UPLOAD_RETRIES: "${UPLOAD_RETRIES:-3}"
+      UPLOAD_LOCK_TIMEOUT: "${UPLOAD_LOCK_TIMEOUT:-330}"
+      QUEUE_RETRY_INTERVAL: "${QUEUE_RETRY_INTERVAL:-60}"
+      SANE_ONLY_BROTHER4: "${SANE_ONLY_BROTHER4:-true}"
 
-        if [ -z "$$DEVICE" ]; then
-          echo "ERROR: No scanner device found!"
-          exit 1
-        fi
-
-        TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
-        TMP_DIR="/tmp/scan_$${TIMESTAMP}"
-        mkdir -p "$$TMP_DIR"
-
-        echo "Starting batch scan from [$$DEVICE]..."
-        scanimage --device "$$DEVICE" --mode "Gray" --resolution 300 --format=tiff --batch="$$TMP_DIR/page%d.tiff"
-
-        if [ "$$(ls -A "$$TMP_DIR")" ]; then
-          FINAL_FILE="/tmp/scan_$${TIMESTAMP}_final.tiff"
-          echo "Merging pages into a single document..."
-          tiffcp "$$TMP_DIR"/*.tiff "$$FINAL_FILE"
-
-          echo "Uploading document to Paperless-ngx..."
-          curl -H "Authorization: Token $$PAPERLESS_TOKEN" \
-               -F "document=@$$FINAL_FILE" \
-               "$$PAPERLESS_URL/api/documents/post_document/"
-
-          rm -rf "$$TMP_DIR" "$$FINAL_FILE"
-        else
-          echo "Scan canceled or no pages in feeder."
-          rm -rf "$$TMP_DIR"
-        fi
-
-    command:
-      - |
-        # 1. Install the provided Skey tool
-        dpkg -i /tmp/skey.deb || apt-get install -f -y
-        update-ca-certificates
-
-        # 2. Set up scripts for the Brother scan button
-        mkdir -p /opt/brother/scanner/brscan-skey/script/
-        echo "$$SCAN_SCRIPT" > /opt/brother/scanner/brscan-skey/script/scantoimage.sh
-        chmod +x /opt/brother/scanner/brscan-skey/script/scantoimage.sh
-        # Create version-specific link for brscan-skey compatibility
-        cp /opt/brother/scanner/brscan-skey/script/scantoimage.sh /opt/brother/scanner/brscan-skey/script/scantoimage-0.3.5-0.sh
-
-        # 3. Register the scanner in the driver
-        brsaneconfig4 -r Brother_Scanner || true
-        brsaneconfig4 -a name=Brother_Scanner model=MFC-7360N ip="$$BRSCAN_IP"
-
-        # 4. Start background services for network discovery (mDNS/Avahi)
-        mkdir -p /var/run/dbus && rm -f /var/run/dbus/pid && dbus-daemon --system --fork
-        avahi-daemon -D
-        sleep 2
-        
-        # 5. Register the PC name on the scanner's display (from .env)
-        echo "Registering PC name at scanner: $$SCAN_PC_NAME"
-        brscan-skey -u "$$SCAN_PC_NAME"
-        brscan-skey -r
-
-        echo "SYSTEM READY! AirSane is listening on port: $$AIRSANE_PORT"
-        # 6. Start AirSane with the port defined in .env
-        exec /usr/local/bin/airsaned --listen-port="$$AIRSANE_PORT" --access-log=-
+volumes:
+  scan-queue:
