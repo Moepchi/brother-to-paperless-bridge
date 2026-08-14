@@ -1,0 +1,10 @@
+# Fast, offline-safe layer for testing script-only changes on an existing image.
+# The full release image remains defined by Dockerfile.
+ARG BASE_IMAGE=brother-to-paperless-bridge:local
+FROM ${BASE_IMAGE}
+
+COPY scripts/ /usr/local/lib/brother-bridge/
+COPY entrypoint.sh /usr/local/bin/brother-bridge-entrypoint
+
+RUN chmod +x /usr/local/bin/brother-bridge-entrypoint \
+    /usr/local/lib/brother-bridge/*.sh
