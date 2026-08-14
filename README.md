@@ -117,7 +117,9 @@ The separately mounted `brscan-skey` package is also verified before installatio
 included checksum matches `brscan-skey-0.3.5-0.amd64.deb`; set `BRSCAN_SKEY_SHA256` to the
 verified checksum when intentionally supplying a different package.
 
-Contributing & License
-Feel free to open issues or submit pull requests if you want to add support for other brscan driver versions.
+## Contributing and license
+
+Feel free to open issues or submit pull requests if you want to add support for other brscan
+driver versions. This project is available under the [MIT License](LICENSE).
 
 Maintained with ☕ by Moepchi.
