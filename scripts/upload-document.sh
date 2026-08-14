@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 document=${1:?Usage: upload-document.sh DOCUMENT}
-readonly UPLOAD_LOCK_FILE=${UPLOAD_LOCK_FILE:-/var/lib/brother-bridge/upload.lock}
+readonly QUEUE_DIR=${SCAN_QUEUE_DIR:-/var/lib/brother-bridge/queue}
+readonly UPLOAD_LOCK_FILE=${UPLOAD_LOCK_FILE:-${QUEUE_DIR}/.upload.lock}
 readonly UPLOAD_LOCK_TIMEOUT=${UPLOAD_LOCK_TIMEOUT:-330}
 
 if [[ ! -s "${document}" ]]; then
