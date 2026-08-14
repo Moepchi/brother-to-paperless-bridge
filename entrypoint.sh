@@ -11,6 +11,7 @@ readonly SCRIPT_DIR=${BRIDGE_SCRIPT_DIR:-/usr/local/lib/brother-bridge}
 "${SCRIPT_DIR}/configure-sane.sh"
 
 if [[ -f /tmp/skey.deb ]]; then
+  echo "${BRSCAN_SKEY_SHA256}  /tmp/skey.deb" | sha256sum --check --strict
   dpkg -i /tmp/skey.deb || apt-get install -f -y
 else
   echo "ERROR: /tmp/skey.deb is missing. Mount the matching brscan-skey package." >&2

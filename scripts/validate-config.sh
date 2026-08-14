@@ -3,12 +3,19 @@ set -Eeuo pipefail
 
 required=(BRSCAN_IP PAPERLESS_URL PAPERLESS_TOKEN SCAN_PC_NAME)
 
+: "${BRSCAN_SKEY_SHA256:=cda25534ea8e3018e7d46b970cb08b36084355adedc933aba0c8c7d03e903db9}"
+
 for variable in "${required[@]}"; do
   if [[ -z "${!variable:-}" ]]; then
     echo "ERROR: Required environment variable ${variable} is empty." >&2
     exit 1
   fi
 done
+
+if [[ ! "${BRSCAN_SKEY_SHA256}" =~ ^[[:xdigit:]]{64}$ ]]; then
+  echo "ERROR: BRSCAN_SKEY_SHA256 must contain exactly 64 hexadecimal characters." >&2
+  exit 1
+fi
 
 if [[ ! "${BRSCAN_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
   echo "ERROR: BRSCAN_IP must be an IPv4 address." >&2

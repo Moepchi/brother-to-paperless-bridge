@@ -54,6 +54,15 @@ rejects_invalid_airsane_debug() {
       "${ROOT}/scripts/validate-config.sh" >/dev/null 2>&1
 }
 
+rejects_invalid_skey_checksum() {
+  ! BRSCAN_IP=192.168.1.20 \
+    PAPERLESS_URL=http://paperless:8000 \
+    PAPERLESS_TOKEN=secret \
+    SCAN_PC_NAME=Paperless \
+    BRSCAN_SKEY_SHA256=not-a-checksum \
+      "${ROOT}/scripts/validate-config.sh" >/dev/null 2>&1
+}
+
 retry_keeps_failed_upload() {
   local case_dir="${TMP_ROOT}/failed"
   mkdir -p "${case_dir}/bin" "${case_dir}/queue"
@@ -194,6 +203,7 @@ run_test 'accepts valid configuration' valid_config
 run_test 'rejects missing Paperless token' rejects_missing_token
 run_test 'rejects invalid queue retry interval' rejects_invalid_retry_interval
 run_test 'rejects invalid AirSane debug flag' rejects_invalid_airsane_debug
+run_test 'rejects invalid Brother package checksum' rejects_invalid_skey_checksum
 run_test 'failed upload remains queued' retry_keeps_failed_upload
 run_test 'successful upload leaves queue empty' retry_removes_successful_upload
 run_test 'concurrent uploads are serialized' uploads_are_serialized

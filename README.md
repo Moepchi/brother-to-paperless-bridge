@@ -113,6 +113,10 @@ packages. AirSane is checked out at a pinned Git commit and the Brother driver d
 SHA-256 verified. Override the corresponding Docker build arguments only when intentionally
 upgrading either component.
 
+The separately mounted `brscan-skey` package is also verified before installation. The
+included checksum matches `brscan-skey-0.3.5-0.amd64.deb`; set `BRSCAN_SKEY_SHA256` to the
+verified checksum when intentionally supplying a different package.
+
 Contributing & License
 Feel free to open issues or submit pull requests if you want to add support for other brscan driver versions.
 
