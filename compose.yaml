@@ -1,7 +1,7 @@
 services:
   brother-bridge:
     build: .
-    image: "${BRIDGE_IMAGE:-brother-to-paperless-bridge:local}"
+    image: "${BRIDGE_IMAGE:-ghcr.io/moepchi/brother-to-paperless-bridge:latest}"
     container_name: brother-bridge
     init: true
     restart: unless-stopped

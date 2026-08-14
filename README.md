@@ -6,6 +6,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Moepchi/brother-to-paperless-bridge?display_name=tag&sort=semver)](https://github.com/Moepchi/brother-to-paperless-bridge/releases/latest)
 [![Tests](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/tests.yml/badge.svg)](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/tests.yml)
+[![Container](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/container.yml/badge.svg)](https://github.com/Moepchi/brother-to-paperless-bridge/actions/workflows/container.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20amd64-2563eb.svg)](#compatibility)
 
@@ -117,12 +118,18 @@ certificate is required:
 - **Private certificate authority:** place one or more PEM `.crt` files in `./certs/`.
 - **Publicly trusted HTTPS or trusted local HTTP:** leave `./certs/` empty.
 
-### 4. Build and start
+### 4. Pull and start
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose ps
 ```
+
+The default image is published as
+`ghcr.io/moepchi/brother-to-paperless-bridge:latest`. It contains the open-source bridge,
+AirSane, and the `brscan4` network driver. The proprietary Scan Key Tool is installed from
+your locally mounted Brother package whenever the container starts.
 
 After the start period, Compose should report the container as `healthy`. AirSane is then
 available at `http://DOCKER_SERVER_IP:8095`.
@@ -177,7 +184,7 @@ The complete, commented configuration lives in [`example.env`](example.env).
 2. The finished TIFF is converted to PDF and moved atomically into the persistent `scan-queue` volume.
    If conversion fails, the original TIFF is preserved instead of discarding the scan.
 3. The bridge requests a Paperless upload while holding a shared upload lock.
-4. The returned Paperless task ID is stored beside the TIFF in the queue.
+4. The returned Paperless task ID is stored beside the queued document.
 5. The bridge follows that task until Paperless reports successful processing.
 6. Only then are the PDF and task ID removed.
 
@@ -201,7 +208,8 @@ docker compose logs -f brother-bridge
 
 ```bash
 docker exec brother-bridge \
-  find /var/lib/brother-bridge/queue -maxdepth 1 -type f -name '*.tiff' -print
+  find /var/lib/brother-bridge/queue -maxdepth 1 -type f \
+    \( -name '*.pdf' -o -name '*.tiff' \) -print
 ```
 
 Do not delete queued files unless you have confirmed that the corresponding documents are
@@ -211,12 +219,25 @@ already present in Paperless.
 
 ```bash
 git pull --ff-only
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose ps
 ```
 
 The named queue volume is retained during ordinary rebuilds and container recreation. Do
 not run `docker compose down -v` unless you intentionally want to remove queued documents.
+
+### Build locally
+
+To build the open-source portion locally instead of pulling the published image:
+
+```bash
+BRIDGE_IMAGE=brother-to-paperless-bridge:local docker compose build
+BRIDGE_IMAGE=brother-to-paperless-bridge:local docker compose up -d
+```
+
+Release tags such as `1.2.0`, `1.2`, and `1` are also published for installations that prefer
+an explicitly pinned version over `latest`. The `edge` tag follows the current `main` branch.
 
 ## Troubleshooting
 
@@ -271,7 +292,9 @@ Run the dependency-free regression suite with:
 bash tests/run.sh
 ```
 
-The same checks run automatically in GitHub Actions for pushes and pull requests.
+The same checks run automatically in GitHub Actions for pushes and pull requests. Pull
+requests also build the container without publishing it. Changes merged into `main` publish
+the `edge` image; version tags publish matching release images and `latest`.
 
 ## License
 
