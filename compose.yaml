@@ -14,10 +14,9 @@ services:
     network_mode: host
 
     volumes:
-      # Mapping local driver and certificate files into the container
+      # Mapping the local driver and optional custom certificates
       - ./brscan-skey-0.3.5-0.amd64.deb:/tmp/skey.deb:ro
-      # Only required if you use a self-signed SSL certificate for Paperless-ngx
-      - ./rootCA.crt:/usr/local/share/ca-certificates/rootCA.crt:ro
+      - ./certs:/usr/local/share/ca-certificates:ro
       # Persistent safety queue: failed uploads survive container restarts
       - scan-queue:/var/lib/brother-bridge/queue
 
@@ -33,13 +32,14 @@ services:
       AIRSANE_PORT: "${AIRSANE_PORT}"
       AIRSANE_DEBUG: "${AIRSANE_DEBUG:-false}"
       SCAN_DEVICE: "${SCAN_DEVICE:-}"
-      SCAN_MODE: "${SCAN_MODE:-True Gray}"
       SCAN_RESOLUTION: "${SCAN_RESOLUTION:-100}"
       SCAN_SOURCE: "${SCAN_SOURCE:-FB}"
       SCAN_SIZE: "${SCAN_SIZE:-A4}"
       SCAN_DUPLEX: "${SCAN_DUPLEX:-false}"
       UPLOAD_RETRIES: "${UPLOAD_RETRIES:-3}"
       UPLOAD_LOCK_TIMEOUT: "${UPLOAD_LOCK_TIMEOUT:-330}"
+      PAPERLESS_TASK_TIMEOUT: "${PAPERLESS_TASK_TIMEOUT:-300}"
+      PAPERLESS_TASK_POLL_INTERVAL: "${PAPERLESS_TASK_POLL_INTERVAL:-5}"
       QUEUE_RETRY_INTERVAL: "${QUEUE_RETRY_INTERVAL:-60}"
       SANE_ONLY_BROTHER4: "${SANE_ONLY_BROTHER4:-true}"
 

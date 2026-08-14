@@ -32,11 +32,6 @@ if (( ${#SCAN_PC_NAME} > 15 )); then
   exit 1
 fi
 
-if [[ -z "${SCAN_MODE:-True Gray}" ]]; then
-  echo "ERROR: SCAN_MODE must not be empty." >&2
-  exit 1
-fi
-
 if [[ ! "${SCAN_RESOLUTION:-100}" =~ ^[0-9]+$ ]]; then
   echo "ERROR: SCAN_RESOLUTION must be a positive integer." >&2
   exit 1
@@ -64,6 +59,16 @@ fi
 
 if [[ ! "${UPLOAD_LOCK_TIMEOUT:-330}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: UPLOAD_LOCK_TIMEOUT must be a positive integer." >&2
+  exit 1
+fi
+
+if [[ ! "${PAPERLESS_TASK_TIMEOUT:-300}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: PAPERLESS_TASK_TIMEOUT must be a positive integer." >&2
+  exit 1
+fi
+
+if [[ ! "${PAPERLESS_TASK_POLL_INTERVAL:-5}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: PAPERLESS_TASK_POLL_INTERVAL must be a positive integer." >&2
   exit 1
 fi
 

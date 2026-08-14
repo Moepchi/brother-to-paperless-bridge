@@ -32,8 +32,8 @@ legacy workflow to the Paperless-ngx API and also exposes the scanner through Ai
 | 📱 AirSane | Makes the scanner available to compatible eSCL/AirScan clients and a small web UI |
 
 ```text
-Brother scan button → brscan-skey → multi-page TIFF → persistent queue → Paperless-ngx API
-                                            └──── retry until accepted ────┘
+Brother scan button → brscan-skey → multi-page TIFF → PDF queue → Paperless task
+                                  └── keep until processing succeeds ──┘
 ```
 
 ## Compatibility
@@ -77,6 +77,7 @@ Place the Brother package beside `compose.yaml`:
 ```text
 brother-to-paperless-bridge/
 ├── brscan-skey-0.3.5-0.amd64.deb
+├── certs/                       # optional private CA certificates
 ├── compose.yaml
 ├── Dockerfile
 └── .env
@@ -108,13 +109,13 @@ Protect the file because it contains your Paperless token:
 chmod 600 .env
 ```
 
-### 3. Handle the optional private CA
+### 3. Add an optional private CA
 
-The included Compose file mounts `rootCA.crt`. Choose one option before starting:
+The included Compose file mounts the `certs/` directory. No Compose editing or placeholder
+certificate is required:
 
-- **Private certificate authority:** place its PEM certificate at `./rootCA.crt`.
-- **Publicly trusted HTTPS or trusted local HTTP:** remove the `rootCA.crt` volume line
-  from `compose.yaml`.
+- **Private certificate authority:** place one or more PEM `.crt` files in `./certs/`.
+- **Publicly trusted HTTPS or trusted local HTTP:** leave `./certs/` empty.
 
 ### 4. Build and start
 
@@ -150,9 +151,6 @@ The complete, commented configuration lives in [`example.env`](example.env).
 | `SCAN_SIZE` | `A4` | Page size passed to the Brother helper |
 | `SCAN_DUPLEX` | `false` | Enables duplex where supported by model and source |
 
-`SCAN_MODE` remains available for compatibility but is not currently applied by Brother's
-`skey-scanimage` hardware-button workflow.
-
 ### Paperless and reliability
 
 | Variable | Default | Description |
@@ -161,6 +159,8 @@ The complete, commented configuration lives in [`example.env`](example.env).
 | `PAPERLESS_TOKEN` | required | Paperless API token |
 | `UPLOAD_RETRIES` | `3` | Immediate retries for one upload attempt |
 | `UPLOAD_LOCK_TIMEOUT` | `330` | Maximum wait for another active uploader |
+| `PAPERLESS_TASK_TIMEOUT` | `300` | Seconds to wait for one Paperless processing task |
+| `PAPERLESS_TASK_POLL_INTERVAL` | `5` | Seconds between task status checks |
 | `QUEUE_RETRY_INTERVAL` | `60` | Seconds between background queue retries |
 
 ### AirSane and diagnostics
@@ -174,13 +174,18 @@ The complete, commented configuration lives in [`example.env`](example.env).
 ## How safe delivery works
 
 1. The Brother helper completes the scan in a temporary directory.
-2. The finished TIFF is moved atomically into the persistent `scan-queue` volume.
+2. The finished TIFF is converted to PDF and moved atomically into the persistent `scan-queue` volume.
+   If conversion fails, the original TIFF is preserved instead of discarding the scan.
 3. The bridge requests a Paperless upload while holding a shared upload lock.
-4. The file is deleted only after Paperless accepts the request.
-5. A failed request leaves the file untouched for the background retry worker.
+4. The returned Paperless task ID is stored beside the TIFF in the queue.
+5. The bridge follows that task until Paperless reports successful processing.
+6. Only then are the PDF and task ID removed.
 
-The queue survives container recreation and server restarts. Test scans may be TIFF files;
-Paperless performs its normal document processing after accepting them.
+Timeouts and connection failures keep both files for the background worker, which resumes
+the existing task instead of uploading the document again. A task that explicitly fails is
+cleared so the original PDF can be submitted again later. Existing queued TIFF files remain
+supported during upgrades. The queue survives container
+recreation and server restarts.
 
 ## Operations
 
@@ -234,9 +239,10 @@ The healthcheck requires AirSane, `brscan-skey`, and the queue worker to be runn
 
 ### The scan is not visible in Paperless
 
-Check the queue and logs first. A queued TIFF means scanning succeeded but Paperless did not
-accept the upload yet. Verify `PAPERLESS_URL`, the API token, TLS trust, and connectivity from
-the Docker server. The worker retries automatically; restarting is normally unnecessary.
+Check the queue and logs first. A queued PDF (or an older TIFF) means scanning succeeded, but its upload or
+Paperless processing has not completed yet. A neighboring `.task` file contains the accepted
+Paperless task ID. Verify `PAPERLESS_URL`, the API token, TLS trust, and connectivity from the
+Docker server. The worker resumes automatically; restarting is normally unnecessary.
 
 ### The Brother package checksum fails
 
