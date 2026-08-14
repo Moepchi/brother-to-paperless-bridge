@@ -155,6 +155,33 @@ EOF
     && [[ ! -s "${case_dir}/result" ]]
 }
 
+document_removed_while_waiting_is_already_complete() {
+  local case_dir="${TMP_ROOT}/already-complete"
+  mkdir -p "${case_dir}/bin"
+  printf 'scan' > "${case_dir}/document.pdf"
+  printf '#!/usr/bin/env bash\nprintf "unexpected curl call\\n" >&2\nexit 1\n' > "${case_dir}/bin/curl"
+  chmod +x "${case_dir}/bin/curl"
+
+  (
+    exec 8>"${case_dir}/upload.lock"
+    flock 8
+    printf 'locked\n' > "${case_dir}/ready"
+    sleep 1
+  ) &
+  local lock_pid=$!
+  while [[ ! -e "${case_dir}/ready" ]]; do sleep 0.05; done
+
+  PATH="${case_dir}/bin:${PATH}" PAPERLESS_URL=http://paperless:8000 \
+    PAPERLESS_TOKEN=secret UPLOAD_LOCK_FILE="${case_dir}/upload.lock" \
+      "${ROOT}/scripts/upload-document.sh" "${case_dir}/document.pdf" >/dev/null &
+  local upload_pid=$!
+  while [[ ! -e "/proc/${upload_pid}/fd/9" ]]; do sleep 0.05; done
+  rm -- "${case_dir}/document.pdf"
+
+  wait "${lock_pid}"
+  wait "${upload_pid}"
+}
+
 pending_task_is_resumed_without_reupload() {
   local case_dir="${TMP_ROOT}/pending-task"
   mkdir -p "${case_dir}/bin" "${case_dir}/queue"
@@ -328,6 +355,7 @@ run_test 'rejects invalid Brother package checksum' rejects_invalid_skey_checksu
 run_test 'failed upload remains queued' retry_keeps_failed_upload
 run_test 'successful upload leaves queue empty' retry_removes_successful_upload
 run_test 'concurrent uploads are serialized' uploads_are_serialized
+run_test 'document completed while waiting is not reported as failed' document_removed_while_waiting_is_already_complete
 run_test 'existing Paperless task resumes without another upload' pending_task_is_resumed_without_reupload
 run_test 'pending Paperless task keeps document and task ID' pending_task_keeps_document_and_task_id
 run_test 'healthcheck accepts running services' healthcheck_accepts_running_services

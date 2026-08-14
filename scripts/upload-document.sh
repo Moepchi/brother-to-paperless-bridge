@@ -23,6 +23,13 @@ if ! flock -w "${UPLOAD_LOCK_TIMEOUT}" 9; then
   exit 75
 fi
 
+# Another worker may have completed and removed this same queued document
+# while this process was waiting for the shared upload lock.
+if [[ ! -e "${document}" ]]; then
+  echo "Document was already completed by another uploader."
+  exit 0
+fi
+
 task_id=''
 if [[ -s "${TASK_FILE}" ]]; then
   task_id=$(<"${TASK_FILE}")
