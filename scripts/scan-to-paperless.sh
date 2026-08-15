@@ -33,6 +33,7 @@ fi
 timestamp=$(date +%Y%m%d_%H%M%S)
 work_dir=$(mktemp -d "/tmp/brother-scan-${timestamp}-XXXXXX")
 install -d "${QUEUE_DIR}"
+"${SCRIPT_DIR}/record-event.sh" scan_started || true
 
 echo "Starting Brother hardware-button scan from ${device}..."
 scan_file="${work_dir}/scan.tif"
@@ -63,6 +64,7 @@ fi
 
 if [[ ! -s "${scan_file}" ]]; then
   echo "Scan canceled or no pages found (scanimage exit ${scan_status})."
+  "${SCRIPT_DIR}/record-event.sh" scan_failed "No pages received from scanner" || true
   exit "${scan_status}"
 fi
 
@@ -76,15 +78,18 @@ if ! "${converter}" -o "${queued_partial}" "${scan_file}" || [[ ! -s "${queued_p
   queued_partial="${queued_document}.partial"
   mv -- "${scan_file}" "${queued_partial}"
   echo "WARNING: PDF conversion failed; preserving the original TIFF in the queue." >&2
+  "${SCRIPT_DIR}/record-event.sh" conversion_failed "Original TIFF preserved" || true
 fi
 mv -- "${queued_partial}" "${queued_document}"
 queued_partial=''
 
 echo "Document safely queued: ${queued_document}"
+"${SCRIPT_DIR}/record-event.sh" scan_queued || true
 if "${SCRIPT_DIR}/upload-document.sh" "${queued_document}"; then
   rm -f -- "${queued_document}"
   echo "Document accepted by Paperless."
 else
+  "${SCRIPT_DIR}/record-event.sh" upload_failed "Document remains queued" || true
   echo "WARNING: Upload failed; document remains safely queued: ${queued_document}" >&2
   exit 1
 fi

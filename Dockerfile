@@ -20,11 +20,14 @@ FROM ${DEBIAN_IMAGE}
 
 ARG BRSCAN4_VERSION=0.4.11-1
 ARG BRSCAN4_SHA256=027b73648722ac8c8eb1a9c419d284a6562cc763feac9740a2b75a683b092972
+ARG BRIDGE_VERSION=dev
+
+ENV BRIDGE_VERSION=${BRIDGE_VERSION}
 
 RUN apt-get update \
     && apt-get install -y \
       avahi-daemon ca-certificates curl dbus iputils-ping libsane \
-      jq libtiff-tools procps sane-utils util-linux wget \
+      jq libtiff-tools procps python3-minimal sane-utils util-linux wget \
     && curl --fail --location --silent --show-error \
       "https://slackware.uk/sbosrcarch/by-name/system/brother-brscan4/brscan4-${BRSCAN4_VERSION}.amd64.deb" \
       --output /tmp/brscan4.deb \
@@ -36,6 +39,7 @@ RUN apt-get update \
 COPY --from=airsane-builder /usr/local/bin/airsaned /usr/local/bin/airsaned
 COPY --from=airsane-builder /etc/airsane/ /etc/airsane/
 COPY scripts/ /usr/local/lib/brother-bridge/
+COPY status/ /usr/local/share/brother-bridge/status/
 COPY entrypoint.sh /usr/local/bin/brother-bridge-entrypoint
 
 RUN chmod +x /usr/local/bin/airsaned \

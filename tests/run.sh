@@ -63,6 +63,28 @@ rejects_invalid_skey_checksum() {
       "${ROOT}/scripts/validate-config.sh" >/dev/null 2>&1
 }
 
+rejects_status_port_collision() {
+  ! BRSCAN_IP=192.168.1.20 \
+    PAPERLESS_URL=http://paperless:8000 \
+    PAPERLESS_TOKEN=secret \
+    SCAN_PC_NAME=Paperless \
+    AIRSANE_PORT=8095 \
+    STATUS_PORT=8095 \
+      "${ROOT}/scripts/validate-config.sh" >/dev/null 2>&1
+}
+
+records_valid_statistics_event() {
+  local case_dir="${TMP_ROOT}/statistics"
+  SCAN_QUEUE_DIR="${case_dir}/queue" \
+    "${ROOT}/scripts/record-event.sh" processing_succeeded "" 12 42 \
+    && jq --exit-status '
+      .event == "processing_succeeded"
+      and .duration_seconds == 12
+      and .document_id == "42"
+      and (.timestamp | type == "string")
+    ' "${case_dir}/queue/.stats/events.jsonl" >/dev/null
+}
+
 retry_keeps_failed_upload() {
   local case_dir="${TMP_ROOT}/failed"
   mkdir -p "${case_dir}/bin" "${case_dir}/queue"
@@ -352,6 +374,8 @@ run_test 'rejects missing Paperless token' rejects_missing_token
 run_test 'rejects invalid queue retry interval' rejects_invalid_retry_interval
 run_test 'rejects invalid AirSane debug flag' rejects_invalid_airsane_debug
 run_test 'rejects invalid Brother package checksum' rejects_invalid_skey_checksum
+run_test 'rejects status and AirSane port collision' rejects_status_port_collision
+run_test 'records a valid statistics event' records_valid_statistics_event
 run_test 'failed upload remains queued' retry_keeps_failed_upload
 run_test 'successful upload leaves queue empty' retry_removes_successful_upload
 run_test 'concurrent uploads are serialized' uploads_are_serialized
@@ -363,6 +387,9 @@ run_test 'failed upload after scan preserves document' scan_keeps_document_after
 run_test 'successful upload after scan clears document' scan_removes_document_after_successful_upload
 run_test 'failed PDF conversion safely queues the original TIFF' scan_keeps_tiff_when_pdf_conversion_fails
 run_test 'SANE discovery is limited to brother4' limits_sane_to_brother_backend
+if command -v python3 >/dev/null; then
+  run_test 'status dashboard exposes safe aggregate data' python3 "${ROOT}/tests/status_test.py"
+fi
 
 printf '\n%d passed, %d failed\n' "${pass}" "${fail}"
 (( fail == 0 ))
