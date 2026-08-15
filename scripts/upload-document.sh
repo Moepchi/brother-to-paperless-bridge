@@ -8,6 +8,7 @@ readonly UPLOAD_LOCK_TIMEOUT=${UPLOAD_LOCK_TIMEOUT:-330}
 readonly TASK_TIMEOUT=${PAPERLESS_TASK_TIMEOUT:-300}
 readonly TASK_POLL_INTERVAL=${PAPERLESS_TASK_POLL_INTERVAL:-5}
 readonly TASK_FILE="${document}.task"
+readonly SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 if [[ ! -s "${document}" ]]; then
   echo "ERROR: Document does not exist or is empty: ${document}" >&2
@@ -42,7 +43,7 @@ else
   }
   trap cleanup_upload EXIT
 
-  curl --silent --show-error --fail-with-body \
+  if ! curl --silent --show-error --fail-with-body \
     --connect-timeout "${UPLOAD_CONNECT_TIMEOUT:-10}" \
     --max-time "${UPLOAD_MAX_TIME:-300}" \
     --retry "${UPLOAD_RETRIES:-3}" \
@@ -51,18 +52,23 @@ else
     -H "Authorization: Token ${PAPERLESS_TOKEN}" \
     -F "document=@${document}" \
     --output "${response_file}" \
-    "${paperless_url}/api/documents/post_document/"
+    "${paperless_url}/api/documents/post_document/"; then
+    "${SCRIPT_DIR}/record-event.sh" upload_failed "Paperless upload request failed" || true
+    exit 1
+  fi
 
   task_id=$(jq --raw-output --exit-status \
     'if type == "string" then . elif .task_id then .task_id else empty end' \
     "${response_file}") \
-    || { echo "ERROR: Paperless returned no task ID after upload." >&2; exit 1; }
+    || { echo "ERROR: Paperless returned no task ID after upload." >&2; "${SCRIPT_DIR}/record-event.sh" upload_failed "Paperless returned no task ID" || true; exit 1; }
 
   printf '%s\n' "${task_id}" > "${task_partial}"
   mv -- "${task_partial}" "${TASK_FILE}"
   echo "Paperless accepted upload as task ${task_id}; waiting for processing."
+  "${SCRIPT_DIR}/record-event.sh" upload_accepted || true
 fi
 
+task_started=${SECONDS}
 deadline=$((SECONDS + TASK_TIMEOUT))
 while (( SECONDS < deadline )); do
   task_json=$(curl --silent --show-error --fail-with-body \
@@ -81,7 +87,13 @@ while (( SECONDS < deadline )); do
 
   case "${status}" in
     SUCCESS)
+      document_id=$(jq --raw-output '
+        (if type == "array" then .[0]
+         elif (.results | type) == "array" then .results[0]
+         else . end) // {} | .related_document // empty
+      ' <<<"${task_json}")
       rm -f -- "${TASK_FILE}"
+      "${SCRIPT_DIR}/record-event.sh" processing_succeeded "" "$((SECONDS - task_started))" "${document_id}" || true
       echo "Paperless task ${task_id} completed successfully."
       exit 0
       ;;
@@ -92,6 +104,7 @@ while (( SECONDS < deadline )); do
          else . end) // {} | .result // .error // "unknown processing error"
       ' <<<"${task_json}")
       rm -f -- "${TASK_FILE}"
+      "${SCRIPT_DIR}/record-event.sh" processing_failed "Paperless task ended as ${status}" || true
       echo "ERROR: Paperless task ${task_id} ended as ${status}: ${error_message}" >&2
       exit 1
       ;;
@@ -101,4 +114,5 @@ while (( SECONDS < deadline )); do
 done
 
 echo "WARNING: Paperless task ${task_id} is not finished; its ID remains queued for later polling." >&2
+"${SCRIPT_DIR}/record-event.sh" processing_pending "Paperless task will be resumed" || true
 exit "${return_status:-75}"

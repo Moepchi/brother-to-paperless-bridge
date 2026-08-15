@@ -14,3 +14,11 @@ curl --silent --show-error --fail \
   --max-time 5 \
   "http://127.0.0.1:${AIRSANE_PORT}/" >/dev/null \
   || { echo "AirSane is not responding." >&2; exit 1; }
+
+if [[ "${STATUS_ENABLED:-true}" == true ]]; then
+  curl --silent --show-error --fail \
+    --connect-timeout 2 \
+    --max-time 5 \
+    "http://127.0.0.1:${STATUS_PORT:-8096}/health" >/dev/null \
+    || { echo "Status dashboard is not responding." >&2; exit 1; }
+fi

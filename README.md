@@ -31,6 +31,7 @@ legacy workflow to the Paperless-ngx API and also exposes the scanner through Ai
 | 🩺 Observable health | Docker checks AirSane, the Brother button service, and the queue worker |
 | 🔒 Safer runtime | Network-scanner deployments run without privileged container access |
 | 📱 AirSane | Makes the scanner available to compatible eSCL/AirScan clients and a small web UI |
+| 📊 Status dashboard | Shows service health, queue depth, delivery statistics, and recent activity |
 
 ```text
 Brother scan button → brscan-skey → multi-page TIFF → PDF queue → Paperless task
@@ -132,7 +133,8 @@ AirSane, and the `brscan4` network driver. The proprietary Scan Key Tool is inst
 your locally mounted Brother package whenever the container starts.
 
 After the start period, Compose should report the container as `healthy`. AirSane is then
-available at `http://DOCKER_SERVER_IP:8095`.
+available at `http://DOCKER_SERVER_IP:8095` and the bridge dashboard at
+`http://DOCKER_SERVER_IP:8096`.
 
 ### 5. Make the first scan
 
@@ -176,7 +178,29 @@ The complete, commented configuration lives in [`example.env`](example.env).
 | --- | --- | --- |
 | `AIRSANE_PORT` | `8095` | AirSane HTTP/eSCL port on the Docker host |
 | `AIRSANE_DEBUG` | `false` | Enables verbose AirSane diagnostics |
+| `STATUS_ENABLED` | `true` | Enables the lightweight bridge dashboard |
+| `STATUS_PORT` | `8096` | Dashboard and JSON status API port |
+| `STATUS_BIND` | `0.0.0.0` | Address on which the dashboard listens |
 | `SANE_ONLY_BROTHER4` | `true` | Avoids slow discovery and AirSane discovering itself |
+
+## Status dashboard
+
+Open `http://DOCKER_SERVER_IP:8096` to see:
+
+- scanner, Paperless, Brother button service, and queue worker availability
+- queued documents and currently tracked Paperless tasks
+- successful deliveries, failures, and average Paperless processing time
+- the latest delivery history and Paperless document IDs
+- running bridge version and dashboard uptime
+
+The JSON representation is available at `/api/status`; `/health` provides a minimal
+monitoring endpoint. Events are stored under `.stats/` in the persistent queue volume and
+survive ordinary container recreation. The history is automatically bounded to 1,000 recent
+events after rotation. Neither the Paperless token nor document contents are exposed.
+
+The dashboard has no built-in authentication. Keep it on a trusted LAN, bind it to a specific
+local address with `STATUS_BIND`, protect it through a reverse proxy, or disable it with
+`STATUS_ENABLED=false` when the Docker host is reachable from an untrusted network.
 
 ## How safe delivery works
 
@@ -282,6 +306,7 @@ serve additional non-Brother scanners.
 - The Paperless token stays in `.env`; never commit that file.
 - AirSane is exposed through host networking. Restrict access with your host firewall when
   the Docker server is reachable from untrusted networks.
+- The status dashboard is read-only but unauthenticated; apply the same network restriction.
 - AirSane, the Debian base image, and Brother packages are pinned or checksum-verified.
 
 ## Development

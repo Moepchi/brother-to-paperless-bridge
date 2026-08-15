@@ -52,6 +52,11 @@ case "${AIRSANE_DEBUG:-false}" in
   *) echo "ERROR: AIRSANE_DEBUG must be true or false." >&2; exit 1 ;;
 esac
 
+case "${STATUS_ENABLED:-true}" in
+  true|false) ;;
+  *) echo "ERROR: STATUS_ENABLED must be true or false." >&2; exit 1 ;;
+esac
+
 if [[ ! "${QUEUE_RETRY_INTERVAL:-60}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: QUEUE_RETRY_INTERVAL must be a positive integer." >&2
   exit 1
@@ -76,5 +81,17 @@ airsane_port=${AIRSANE_PORT:-8095}
 if [[ ! "${airsane_port}" =~ ^[0-9]+$ ]] \
   || (( airsane_port < 1 || airsane_port > 65535 )); then
   echo "ERROR: AIRSANE_PORT must be between 1 and 65535." >&2
+  exit 1
+fi
+
+status_port=${STATUS_PORT:-8096}
+if [[ ! "${status_port}" =~ ^[0-9]+$ ]] \
+  || (( status_port < 1 || status_port > 65535 )); then
+  echo "ERROR: STATUS_PORT must be between 1 and 65535." >&2
+  exit 1
+fi
+
+if [[ "${STATUS_ENABLED:-true}" == true && "${status_port}" == "${airsane_port}" ]]; then
+  echo "ERROR: STATUS_PORT and AIRSANE_PORT must be different." >&2
   exit 1
 fi

@@ -6,6 +6,7 @@ readonly SCRIPT_DIR=${BRIDGE_SCRIPT_DIR:-/usr/local/lib/brother-bridge}
 : "${SCANNER_NAME:=Brother_Scanner}"
 : "${SCANNER_MODEL:=MFC-7360N}"
 : "${AIRSANE_PORT:=8095}"
+: "${STATUS_PORT:=8096}"
 
 "${SCRIPT_DIR}/validate-config.sh"
 "${SCRIPT_DIR}/configure-sane.sh"
@@ -46,6 +47,10 @@ brscan-skey -r
 
 "${SCRIPT_DIR}/retry-queue.sh" || true
 "${SCRIPT_DIR}/queue-worker.sh" &
+
+if [[ "${STATUS_ENABLED:-true}" == true ]]; then
+  python3 /usr/local/share/brother-bridge/status/server.py &
+fi
 
 echo "SYSTEM READY: AirSane is listening on port ${AIRSANE_PORT}"
 exec /usr/local/bin/airsaned \
