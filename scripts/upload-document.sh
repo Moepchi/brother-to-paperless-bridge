@@ -37,9 +37,10 @@ if [[ -s "${TASK_FILE}" ]]; then
   echo "Resuming Paperless task ${task_id}."
 else
   response_file=$(mktemp)
+  error_file=$(mktemp)
   task_partial="${TASK_FILE}.partial"
   cleanup_upload() {
-    rm -f -- "${response_file}" "${task_partial}"
+    rm -f -- "${response_file}" "${error_file}" "${task_partial}"
   }
   trap cleanup_upload EXIT
 
@@ -52,8 +53,15 @@ else
     -H "Authorization: Token ${PAPERLESS_TOKEN}" \
     -F "document=@${document}" \
     --output "${response_file}" \
-    "${paperless_url}/api/documents/post_document/"; then
-    "${SCRIPT_DIR}/record-event.sh" upload_failed "Paperless upload request failed" || true
+    "${paperless_url}/api/documents/post_document/" 2>"${error_file}"; then
+    failure_detail=$(tr '\r\n' '  ' <"${response_file}")
+    if [[ -z "${failure_detail}" ]]; then
+      failure_detail=$(tr '\r\n' '  ' <"${error_file}")
+    fi
+    failure_detail=${failure_detail//${PAPERLESS_TOKEN}/[redacted]}
+    failure_detail=${failure_detail:0:500}
+    "${SCRIPT_DIR}/record-event.sh" upload_failed \
+      "Paperless upload request failed${failure_detail:+: ${failure_detail}}" || true
     exit 1
   fi
 
@@ -92,7 +100,9 @@ while (( SECONDS < deadline )); do
          elif (.results | type) == "array" then .results[0]
          else . end) // {} | .related_document // empty
       ' <<<"${task_json}")
-      rm -f -- "${TASK_FILE}"
+      # Remove the task marker and document while still holding the upload
+      # lock, so the queue worker cannot select the completed file again.
+      rm -f -- "${TASK_FILE}" "${document}"
       "${SCRIPT_DIR}/record-event.sh" processing_succeeded "" "$((SECONDS - task_started))" "${document_id}" || true
       echo "Paperless task ${task_id} completed successfully."
       exit 0
@@ -104,7 +114,9 @@ while (( SECONDS < deadline )); do
          else . end) // {} | .result // .error // "unknown processing error"
       ' <<<"${task_json}")
       rm -f -- "${TASK_FILE}"
-      "${SCRIPT_DIR}/record-event.sh" processing_failed "Paperless task ended as ${status}" || true
+      error_message=${error_message//${PAPERLESS_TOKEN}/[redacted]}
+      "${SCRIPT_DIR}/record-event.sh" processing_failed \
+        "${error_message:0:500}" || true
       echo "ERROR: Paperless task ${task_id} ended as ${status}: ${error_message}" >&2
       exit 1
       ;;
