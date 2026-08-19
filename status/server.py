@@ -67,6 +67,11 @@ def paperless_online():
 def build_status():
     events = load_events()
     counts = Counter(item.get("event") for item in events)
+    last_failure_clear = max(
+        (index for index, item in enumerate(events)
+         if item.get("event") == "failure_cleared"),
+        default=-1,
+    )
     durations = [
         item.get("duration_seconds") for item in events
         if item.get("event") == "processing_succeeded"
@@ -74,9 +79,9 @@ def build_status():
     ]
     queued = list(QUEUE_DIR.glob("*.pdf")) + list(QUEUE_DIR.glob("*.tiff"))
     active_tasks = list(QUEUE_DIR.glob("*.task"))
-    failures = [item for item in events if item.get("event") in {
-        "scan_failed", "upload_failed", "processing_failed"
-    }]
+    failure_types = {"scan_failed", "upload_failed", "processing_failed"}
+    failures = [item for index, item in enumerate(events) if index > last_failure_clear
+                and item.get("event") in failure_types]
     successes = [item for item in events if item.get("event") == "processing_succeeded"]
     history_types = {
         "scan_queued", "processing_succeeded", "processing_failed",
@@ -97,15 +102,16 @@ def build_status():
             "scans_started": counts["scan_started"],
             "documents_queued": counts["scan_queued"],
             "successful": counts["processing_succeeded"],
-            "failed": sum(counts[name] for name in (
-                "scan_failed", "upload_failed", "processing_failed"
-            )),
+            "failed": len(failures),
             "average_processing_seconds": round(sum(durations) / len(durations), 1)
             if durations else None,
         },
         "last_success": successes[-1] if successes else None,
         "last_failure": failures[-1] if failures else None,
-        "history": [item for item in events if item.get("event") in history_types][-20:][::-1],
+        "history": [item for index, item in enumerate(events)
+                    if item.get("event") in history_types
+                    and (item.get("event") not in failure_types
+                         or index > last_failure_clear)][-20:][::-1],
     }
 
 

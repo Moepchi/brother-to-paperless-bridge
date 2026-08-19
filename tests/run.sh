@@ -115,6 +115,20 @@ retry_removes_successful_upload() {
     && [[ ! -e "${case_dir}/queue/document.tiff" ]]
 }
 
+successful_upload_removes_document_before_unlocking() {
+  local case_dir="${TMP_ROOT}/atomic-success"
+  mkdir -p "${case_dir}/bin" "${case_dir}/queue"
+  printf 'scan' > "${case_dir}/queue/document.pdf"
+  write_successful_curl_mock "${case_dir}/bin/curl"
+
+  PATH="${case_dir}/bin:${PATH}" \
+    PAPERLESS_URL=http://paperless:8000 PAPERLESS_TOKEN=secret \
+    SCAN_QUEUE_DIR="${case_dir}/queue" \
+      "${ROOT}/scripts/upload-document.sh" "${case_dir}/queue/document.pdf" >/dev/null \
+    && [[ ! -e "${case_dir}/queue/document.pdf" ]] \
+    && [[ ! -e "${case_dir}/queue/document.pdf.task" ]]
+}
+
 write_successful_curl_mock() {
   local target=$1
   cat > "${target}" <<'EOF'
@@ -378,6 +392,7 @@ run_test 'rejects status and AirSane port collision' rejects_status_port_collisi
 run_test 'records a valid statistics event' records_valid_statistics_event
 run_test 'failed upload remains queued' retry_keeps_failed_upload
 run_test 'successful upload leaves queue empty' retry_removes_successful_upload
+run_test 'successful upload removes document while holding lock' successful_upload_removes_document_before_unlocking
 run_test 'concurrent uploads are serialized' uploads_are_serialized
 run_test 'document completed while waiting is not reported as failed' document_removed_while_waiting_is_already_complete
 run_test 'existing Paperless task resumes without another upload' pending_task_is_resumed_without_reupload

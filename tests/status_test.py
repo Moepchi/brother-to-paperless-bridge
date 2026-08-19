@@ -16,6 +16,8 @@ with tempfile.TemporaryDirectory() as temporary:
         json.dumps({"timestamp": "2026-01-01T10:00:00Z", "event": "scan_started"}),
         json.dumps({"timestamp": "2026-01-01T10:00:02Z", "event": "scan_queued"}),
         json.dumps({"timestamp": "2026-01-01T10:00:08Z", "event": "processing_succeeded", "duration_seconds": 6, "document_id": "42"}),
+        json.dumps({"timestamp": "2026-01-01T10:00:09Z", "event": "upload_failed", "detail": "temporary failure"}),
+        json.dumps({"timestamp": "2026-01-01T10:00:10Z", "event": "failure_cleared", "detail": "confirmed false alarm"}),
         "not-json",
     ]) + "\n", encoding="utf-8")
     (queue / "pending.pdf").write_text("pdf", encoding="utf-8")
@@ -41,8 +43,10 @@ with tempfile.TemporaryDirectory() as temporary:
     assert result["queue"] == {"documents": 1, "active_tasks": 1}
     assert result["statistics"]["scans_started"] == 1
     assert result["statistics"]["successful"] == 1
+    assert result["statistics"]["failed"] == 0
     assert result["statistics"]["average_processing_seconds"] == 6.0
     assert result["last_success"]["document_id"] == "42"
+    assert result["last_failure"] is None
     assert "must-never-appear" not in encoded
 
 print("status dashboard data model passed")

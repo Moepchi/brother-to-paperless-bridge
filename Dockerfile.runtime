@@ -3,7 +3,11 @@
 ARG BASE_IMAGE=brother-to-paperless-bridge:local
 FROM ${BASE_IMAGE}
 
+ARG BRIDGE_VERSION=dev
+ENV BRIDGE_VERSION=${BRIDGE_VERSION}
+
 COPY scripts/ /usr/local/lib/brother-bridge/
+COPY status/ /usr/local/share/brother-bridge/status/
 COPY entrypoint.sh /usr/local/bin/brother-bridge-entrypoint
 
 RUN chmod +x /usr/local/bin/brother-bridge-entrypoint \
